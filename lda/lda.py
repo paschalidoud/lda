@@ -174,10 +174,6 @@ class LDA:
         self.doc_topic_ = self.ndz_ + self.alpha
         self.doc_topic_ /= np.sum(self.doc_topic_, axis=1)[:, np.newaxis]
 
-        # delete attributes no longer needed after fitting to save memory and reduce clutter
-        del self.WS
-        del self.DS
-        del self.ZS
         return self
 
     def _print_status(self, iter):
@@ -221,6 +217,16 @@ class LDA:
         eta = self.eta
         nd = np.sum(ndz, axis=1).astype(np.intc)
         return lda._lda._loglikelihood(nzw, ndz, nz, nd, alpha, eta)
+
+    def perplexity(self):
+        """Per-word perplexity of training data given the fitted model"""
+        logtheta = np.log(self.doc_topic_)
+        logphi = np.log(self.topic_word_)
+        n_words = len(self.WS)
+        perp = 0
+        for w, d in zip(self.WS, self.DS):
+            perp += np.dot(logphi[:, w], logtheta[d, :])
+        return perp / n_words
 
     def _sample_topics(self, random_state):
         random_state = lda.utils.check_random_state(self.random_state)
