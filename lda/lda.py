@@ -234,12 +234,14 @@ class LDA:
 
         for it in range(0, self.n_iter, self.refresh):
             ll = self.loglikelihood()
+            self.loglikelihoods_.append(ll)
             logger.info("<{}> log likelihood: {:.0f}".format(it, ll))
 
             self.sample_topics(
                 iterations=min(self.refresh, self.n_iter - it)
             )
         ll = self.loglikelihood()
+        self.loglikelihoods_.append(ll)
         logger.info("<{}> log likelihood: {:.0f}".format(self.n_iter, ll))
 
         self.clean_up()
@@ -285,9 +287,11 @@ class LDA:
         return lda._lda._loglikelihood(nzw, ndz, nz, nd, alpha, eta)
 
     def sample_topics(self, iterations=1):
+        random_state = lda.utils.check_random_state(self.random_state)
+        rands = self._rands.copy()
         for it in range(iterations):
-            random_state.shuffle(self._rands)
-            self._sample_topics(self._rands)
+            random_state.shuffle(rands)
+            self._sample_topics(rands)
 
     def _sample_topics(self, rands):
         """Samples all topic assignments. Called once per iteration."""
@@ -311,7 +315,7 @@ class LDA:
     @property
     def components_(self):
         components = (self.nzw_ + self.eta).astype(float)
-        components /= np.sum(self.components_, axis=1)[:, np.newaxis]
+        components /= np.sum(components, axis=1)[:, np.newaxis]
 
         return components
 
@@ -322,6 +326,6 @@ class LDA:
     @property
     def doc_topic_(self):
         doc_topic = (self.ndz_ + self.alpha).astype(float)
-        doc_topic /= np.sum(self.doc_topic_, axis=1)[:, np.newaxis]
+        doc_topic /= np.sum(doc_topic, axis=1)[:, np.newaxis]
 
         return doc_topic
