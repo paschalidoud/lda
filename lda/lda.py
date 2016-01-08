@@ -103,6 +103,24 @@ class LDA:
         if len(logger.handlers) == 1 and isinstance(logger.handlers[0], logging.NullHandler):
             logging.basicConfig(level=logging.INFO)
 
+    def initialize(self, X):
+        """Initialize necessary parameters for LDA with X.
+
+        Parameters
+        ----------
+        X: array-like, shape (n_samples, n_features)
+            Training data, where n_samples in the number of samples
+            and n_features is the number of features. Sparse matrix allowed.
+
+        Returns
+        -------
+        self : object
+            Returns the instance itself.
+        """
+        self._initialize(X)
+        return self
+
+
     def fit(self, X, y=None):
         """Fit the model with X.
 
@@ -119,7 +137,7 @@ class LDA:
         """
         self._fit(X)
         return self
-
+    
     def fit_transform(self, X, y=None):
         """Apply dimensionality reduction on X
 
@@ -212,31 +230,22 @@ class LDA:
             Training vector, where n_samples in the number of samples and
             n_features is the number of features. Sparse matrix allowed.
         """
-        random_state = lda.utils.check_random_state(self.random_state)
-        rands = self._rands.copy()
         self._initialize(X)
-        for it in range(self.n_iter):
-            # FIXME: using numpy.roll with a random shift might be faster
-            random_state.shuffle(rands)
-            if it % self.refresh == 0:
-                ll = self.loglikelihood()
-                logger.info("<{}> log likelihood: {:.0f}".format(it, ll))
-                # keep track of loglikelihoods for monitoring convergence
-                self.loglikelihoods_.append(ll)
-            self._sample_topics(rands)
-        ll = self.loglikelihood()
-        logger.info("<{}> log likelihood: {:.0f}".format(self.n_iter - 1, ll))
-        # note: numpy /= is integer division
-        self.components_ = (self.nzw_ + self.eta).astype(float)
-        self.components_ /= np.sum(self.components_, axis=1)[:, np.newaxis]
-        self.topic_word_ = self.components_
-        self.doc_topic_ = (self.ndz_ + self.alpha).astype(float)
-        self.doc_topic_ /= np.sum(self.doc_topic_, axis=1)[:, np.newaxis]
 
-        # delete attributes no longer needed after fitting to save memory and reduce clutter
-        del self.WS
-        del self.DS
-        del self.ZS
+        for it in range(0, self.n_iter, self.refresh):
+            ll = self.loglikelihood()
+            self.loglikelihoods_.append(ll)
+            logger.info("<{}> log likelihood: {:.0f}".format(it, ll))
+
+            self.sample_topics(
+                iterations=min(self.refresh, self.n_iter - it)
+            )
+        ll = self.loglikelihood()
+        self.loglikelihoods_.append(ll)
+        logger.info("<{}> log likelihood: {:.0f}".format(self.n_iter, ll))
+
+        self.clean_up()
+
         return self
 
     def _initialize(self, X):
@@ -277,6 +286,13 @@ class LDA:
         nd = np.sum(ndz, axis=1).astype(np.intc)
         return lda._lda._loglikelihood(nzw, ndz, nz, nd, alpha, eta)
 
+    def sample_topics(self, iterations=1):
+        random_state = lda.utils.check_random_state(self.random_state)
+        rands = self._rands.copy()
+        for it in range(iterations):
+            random_state.shuffle(rands)
+            self._sample_topics(rands)
+
     def _sample_topics(self, rands):
         """Samples all topic assignments. Called once per iteration."""
         n_topics, vocab_size = self.nzw_.shape
@@ -284,3 +300,32 @@ class LDA:
         eta = np.repeat(self.eta, vocab_size).astype(np.float64)
         lda._lda._sample_topics(self.WS, self.DS, self.ZS, self.nzw_, self.ndz_, self.nz_,
                                 alpha, eta, rands)
+
+    def clean_up(self):
+        """Delete attributes no longer needed after fitting to save memory and
+        reduce clutter
+        """
+        if hasattr(self, 'WS'):
+            del self.WS
+        if hasattr(self, 'DS'):
+            del self.DS
+        if hasattr(self, 'ZS'):
+            del self.ZS
+
+    @property
+    def components_(self):
+        components = (self.nzw_ + self.eta).astype(float)
+        components /= np.sum(components, axis=1)[:, np.newaxis]
+
+        return components
+
+    @property
+    def topic_word_(self):
+        return self.components_
+
+    @property
+    def doc_topic_(self):
+        doc_topic = (self.ndz_ + self.alpha).astype(float)
+        doc_topic /= np.sum(doc_topic, axis=1)[:, np.newaxis]
+
+        return doc_topic
